@@ -112,10 +112,19 @@ Before using these templates, ensure you have:
 The deployment files currently require access to `my-registry/tensorrtllm-runtime`. If you don't have access, build and push your own image:
 
 ```bash
-./container/build.sh --framework tensorrtllm
+# Build using pre-built wheel from PyPI (recommended)
+./container/build.sh --framework trtllm
+
+# Or specify a specific version
+./container/build.sh --framework trtllm \
+  --tensorrtllm-pip-wheel tensorrt-llm==1.2.0rc5 \
+  --tensorrtllm-index-url https://pypi.nvidia.com
+
 # Tag and push to your container registry
 # Update the image references in the YAML files
 ```
+
+For detailed TensorRT-LLM build options (including building from source or using pre-built wheels), see the [Container Build Guide](../../../../container/README.md#tensorrt-llm-build-options).
 
 **Note:** TensorRT-LLM uses git-lfs, which needs to be installed in advance:
 ```bash
@@ -124,7 +133,7 @@ apt-get update && apt-get -y install git git-lfs
 
 For ARM machines, use:
 ```bash
-./container/build.sh --framework tensorrtllm --platform linux/arm64
+./container/build.sh --framework trtllm --platform linux/arm64
 ```
 
 ## Usage

@@ -161,6 +161,59 @@ The `build.sh` script is responsible for building Docker images for different AI
 ./build.sh --build-arg CUSTOM_ARG=value
 ```
 
+### TensorRT-LLM Build Options
+
+TensorRT-LLM requires ABI-compatible wheels with the NGC PyTorch base image. There are three ways to build the TensorRT-LLM image:
+
+#### Option 1: Download from PyPI (Default)
+
+Downloads a pre-built wheel from PyPI. This is the simplest option:
+
+```bash
+# Uses default wheel (tensorrt-llm==1.2.0rc5) from pypi.nvidia.com
+./build.sh --framework TRTLLM
+
+# Specify a different version
+./build.sh --framework TRTLLM \
+  --tensorrtllm-pip-wheel tensorrt-llm==1.2.0rc5 \
+  --tensorrtllm-index-url https://pypi.nvidia.com
+```
+
+#### Option 2: Install from Pre-built Wheel Directory
+
+Use a local directory containing a pre-built TensorRT-LLM wheel. The directory must contain:
+- A `.whl` file (the TensorRT-LLM wheel)
+- A `commit.txt` file with `<arch>_<commit_id>` as contents
+
+```bash
+# Install from a local wheel directory
+./build.sh --framework TRTLLM \
+  --tensorrtllm-pip-wheel-dir /path/to/wheel/directory
+```
+
+#### Option 3: Build from Source
+
+Builds the TensorRT-LLM wheel from source. **Requires Linux with Docker and NVIDIA GPU**.
+
+```bash
+# Build from source using default commit
+./build.sh --framework TRTLLM \
+  --tensorrtllm-git-url https://github.com/NVIDIA/TensorRT-LLM
+
+# Build from source with specific commit/tag
+./build.sh --framework TRTLLM \
+  --tensorrtllm-git-url https://github.com/NVIDIA/TensorRT-LLM \
+  --tensorrtllm-commit v1.2.0rc5
+
+# Specify output directory for the built wheel (can be reused later with Option 2)
+./build.sh --framework TRTLLM \
+  --tensorrtllm-git-url https://github.com/NVIDIA/TensorRT-LLM \
+  --tensorrtllm-commit v1.2.0rc5 \
+  --tensorrtllm-pip-wheel-dir /path/to/output/directory
+```
+
+**Note:** Building from source is not supported on macOS. Use Option 1 or Option 2 instead.
+
 ### Building the Frontend Image
 
 The frontend image is a specialized container that includes the Dynamo components (NATS, etcd, dynamo, NIXL, etc) along with the Endpoint Picker (EPP) for Kubernetes Gateway API Inference Extension integration. This image is primarily used for inference gateway deployments.

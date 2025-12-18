@@ -49,7 +49,10 @@ For more finer grained details on how to launch TRTLLM backend workers with Deep
 
 Before running the scripts, ensure you have:
 1. Access to a SLURM cluster
-2. Container image of Dynamo with TensorRT-LLM built using instructions from [here](https://github.com/ai-dynamo/dynamo/tree/main/docs/backends/trtllm/README.md#build-container).
+2. Container image of Dynamo with TensorRT-LLM. Build options:
+   - **Quick build (recommended)**: `./container/build.sh --framework trtllm` (downloads pre-built wheel from PyPI)
+   - **Custom version**: `./container/build.sh --framework trtllm --tensorrtllm-pip-wheel tensorrt-llm==1.2.0rc5 --tensorrtllm-index-url https://pypi.nvidia.com`
+   - **From source**: See [Container Build Guide](../../../../container/README.md#tensorrt-llm-build-options)
 3. Model files accessible on the cluster
 4. Required environment variables set
 
@@ -68,8 +71,9 @@ export SLURM_ACCOUNT="$(sacctmgr -nP show assoc where user=$(whoami) format=acco
 export SLURM_JOB_NAME=""
 
 # NOTE: IMAGE must be set manually for now
-# To build an iamge, see the steps here:
-# https://github.com/ai-dynamo/dynamo/tree/main/docs/backends/trtllm/README.md#build-container
+# To build an image, see the Container Build Guide:
+# ./container/build.sh --framework trtllm
+# For more options: container/README.md#tensorrt-llm-build-options
 export IMAGE="<dynamo_trtllm_image>"
 
 # NOTE: In general, Deepseek R1 is very large, so it is recommended to
