@@ -4,6 +4,7 @@
 from typing import Optional
 
 import torch
+import torch.distributed as dist
 from kvbm.trtllm_integration.rust import KvConnectorWorker as RustKvConnectorWorker
 from kvbm.utils import is_dyn_runtime_enabled
 from tensorrt_llm import logger
@@ -93,6 +94,84 @@ class DynamoKVBMConnectorWorker(KvCacheConnectorWorker):
             raw_event_handles,
         )
 
+    def _broadcast_metadata(self, metadata: Optional[bytes]) -> bytes:
+        """Broadcast metadata from rank 0 to all other ranks using torch.distributed.
+
+        This is a workaround for a bug in TRTLLM's mpi_broadcast function when using
+        MpiPoolSession. In MpiPoolSession, MPI.COMM_WORLD.Get_size() returns 1 per worker,
+        causing mpi_broadcast to skip the broadcast and return the local value (None on
+        non-root ranks). This results in workers receiving None instead of the metadata.
+
+        We use torch.distributed.broadcast instead, which works correctly with MpiPoolSession.
+
+        Args:
+            metadata: The metadata bytes from the scheduler (valid on rank 0, may be None on others)
+
+        Returns:
+            The broadcasted metadata bytes (valid on all ranks)
+        """
+        # Debug: Log incoming metadata state
+        metadata_len = len(metadata) if metadata else 0
+        metadata_type = type(metadata).__name__
+        dist_initialized = dist.is_initialized()
+        logger.info(
+            f"[KVBM rank {self.rank}] bind_connector_meta received: "
+            f"type={metadata_type}, len={metadata_len}, dist_init={dist_initialized}"
+        )
+
+        if not dist_initialized:
+            # torch.distributed not initialized - can't use it for broadcast
+            if metadata is None or (isinstance(metadata, bytes) and len(metadata) == 0):
+                logger.warning(
+                    f"[KVBM rank {self.rank}] metadata is None/empty and torch.distributed "
+                    "not initialized - possible TRTLLM mpi_broadcast failure"
+                )
+                return b""
+            return metadata if isinstance(metadata, bytes) else b""
+
+        world_size = dist.get_world_size()
+        dist_rank = dist.get_rank()
+
+        logger.info(
+            f"[KVBM rank {self.rank}] torch.distributed: world_size={world_size}, dist_rank={dist_rank}"
+        )
+
+        if world_size <= 1:
+            # Single rank - no broadcast needed
+            return metadata if metadata else b""
+
+        device = torch.cuda.current_device()
+
+        # Broadcast metadata size first
+        if dist_rank == 0:
+            metadata_bytes = metadata if metadata else b""
+            size_tensor = torch.tensor(
+                [len(metadata_bytes)], dtype=torch.long, device=device
+            )
+        else:
+            size_tensor = torch.tensor([0], dtype=torch.long, device=device)
+
+        dist.broadcast(size_tensor, src=0)
+        size = size_tensor.item()
+
+        logger.info(f"[KVBM rank {self.rank}] After broadcast, metadata size={size}")
+
+        if size == 0:
+            return b""
+
+        # Broadcast metadata content
+        if dist_rank == 0:
+            data_tensor = torch.tensor(
+                list(metadata_bytes), dtype=torch.uint8, device=device
+            )
+        else:
+            data_tensor = torch.zeros(size, dtype=torch.uint8, device=device)
+
+        dist.broadcast(data_tensor, src=0)
+        result = bytes(data_tensor.cpu().tolist())
+        logger.info(f"[KVBM rank {self.rank}] Broadcast complete, result len={len(result)}")
+        return result
+
     def bind_connector_meta(self, metadata: object):
         """Set the connector metadata from the scheduler.
 
@@ -103,6 +182,11 @@ class DynamoKVBMConnectorWorker(KvCacheConnectorWorker):
         Args:
             metadata (bytes): the connector metadata.
         """
+        # Workaround for TRTLLM mpi_broadcast bug in MpiPoolSession:
+        # metadata may be None on non-root ranks due to broken MPI broadcast.
+        # Re-broadcast using torch.distributed which works correctly.
+        metadata = self._broadcast_metadata(metadata)
+
         super().bind_connector_meta(metadata)
         self._connector.bind_connector_meta(metadata)
 
