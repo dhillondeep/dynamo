@@ -1,6 +1,7 @@
 .idea
 .vs/
 .vscode/
+.DS_Store
 .helix
 [Bb]inlog/
 [Bb][Uu][Ii][Ll][Dd]/

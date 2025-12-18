@@ -109,6 +109,27 @@ async def get_engine_runtime_config(
         return runtime_config
 
 
+def _resolve_max_seq_len(engine: TensorRTLLMEngine, config: Config):
+    """Resolve max_seq_len for dynamic max_tokens default.
+
+    Priority:
+    1) engine's resolved value (engine.llm.args.max_seq_len)
+    2) config value (config.max_seq_len)
+    3) None (TensorRT-LLM default applies)
+    """
+
+    try:
+        engine_max_seq_len = getattr(
+            getattr(getattr(engine, "llm", None), "args", None),
+            "max_seq_len",
+            None,
+        )
+    except Exception:
+        engine_max_seq_len = None
+
+    return engine_max_seq_len if engine_max_seq_len is not None else config.max_seq_len
+
+
 async def worker():
     config = cmd_line_args()
 
@@ -388,6 +409,8 @@ async def init(runtime: DistributedRuntime, config: Config):
                     f"Failed to initialize TensorRT-LLM Prometheus metrics: {e}"
                 )
 
+        max_seq_len = _resolve_max_seq_len(engine, config)
+
         # publisher will be set later if publishing is enabled.
         handler_config = RequestHandlerConfig(
             component=component,
@@ -401,6 +424,7 @@ async def init(runtime: DistributedRuntime, config: Config):
             runtime=runtime,  # Pass runtime for graceful shutdown
             metrics_collector=metrics_collector,
             kv_block_size=config.kv_block_size,
+            max_seq_len=max_seq_len,
         )
 
         # Register the model with runtime config

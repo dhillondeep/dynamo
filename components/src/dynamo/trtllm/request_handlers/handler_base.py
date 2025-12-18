@@ -73,6 +73,7 @@ class RequestHandlerConfig:
     ] = None  # DistributedRuntime reference for graceful shutdown
     metrics_collector: Optional[Any] = None  # TensorRT-LLM MetricsCollector
     kv_block_size: int = 32
+    max_seq_len: Optional[int] = None
 
 
 class HandlerBase:
@@ -94,6 +95,7 @@ class HandlerBase:
         # Store runtime reference for graceful shutdown
         self.runtime = config.runtime
         self.kv_block_size: int = config.kv_block_size
+        self.max_seq_len: Optional[int] = config.max_seq_len
 
     def check_error(self, result: dict):
         """
@@ -329,6 +331,11 @@ class HandlerBase:
         max_tokens = request["stop_conditions"]["max_tokens"]
         if max_tokens:
             sampling_params.max_tokens = max_tokens
+        elif self.max_seq_len is not None:
+            token_ids = request.get("token_ids", [])
+            input_length = len(token_ids) if token_ids else 0
+            dynamic_default = max(1, self.max_seq_len - input_length)
+            sampling_params.max_tokens = dynamic_default
 
         ignore_eos = request["stop_conditions"].get("ignore_eos")
         if ignore_eos:
