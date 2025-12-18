@@ -785,9 +785,11 @@ if [[ $FRAMEWORK == "TRTLLM" ]]; then
         BUILD_ARGS+=" --build-arg TENSORRTLLM_PIP_WHEEL=${TENSORRTLLM_PIP_WHEEL}"
         BUILD_ARGS+=" --build-arg TENSORRTLLM_INDEX_URL=${TENSORRTLLM_INDEX_URL}"
 
-        # Create a dummy directory to satisfy the build context requirement
-        # There is no way to conditionally copy the build context in dockerfile.
+        # Create a dummy directory with placeholder files to satisfy the build context requirement.
+        # The Dockerfile unconditionally COPYs *.whl and *.txt from trtllm_wheel context,
+        # so we need dummy files even when downloading from PyPI.
         mkdir -p /tmp/dummy_dir
+        touch /tmp/dummy_dir/placeholder.whl /tmp/dummy_dir/placeholder.txt
         BUILD_CONTEXT_ARG+=" --build-context trtllm_wheel=/tmp/dummy_dir"
         PRINT_TRTLLM_WHEEL_FILE=${TENSORRTLLM_PIP_WHEEL}
     elif [[ "$TRTLLM_INTENTION" == "install" ]]; then
@@ -911,9 +913,16 @@ if [ "$USE_SCCACHE" = true ]; then
     BUILD_ARGS+=" --build-arg USE_SCCACHE=true"
     BUILD_ARGS+=" --build-arg SCCACHE_BUCKET=${SCCACHE_BUCKET}"
     BUILD_ARGS+=" --build-arg SCCACHE_REGION=${SCCACHE_REGION}"
-    BUILD_ARGS+=" --secret id=aws-key-id,env=AWS_ACCESS_KEY_ID"
-    BUILD_ARGS+=" --secret id=aws-secret-id,env=AWS_SECRET_ACCESS_KEY"
 fi
+# Create temporary files for secrets to support both Docker and Podman.
+# Podman doesn't support env= syntax, so we use file-based secrets.
+AWS_KEY_FILE=$(mktemp)
+AWS_SECRET_FILE=$(mktemp)
+trap "rm -f '$AWS_KEY_FILE' '$AWS_SECRET_FILE'" EXIT
+echo -n "${AWS_ACCESS_KEY_ID:-}" > "$AWS_KEY_FILE"
+echo -n "${AWS_SECRET_ACCESS_KEY:-}" > "$AWS_SECRET_FILE"
+BUILD_ARGS+=" --secret id=aws-key-id,src=$AWS_KEY_FILE"
+BUILD_ARGS+=" --secret id=aws-secret-id,src=$AWS_SECRET_FILE"
 if [[ "$PLATFORM" == *"linux/arm64"* && "${FRAMEWORK}" == "SGLANG" ]]; then
     # Add arguments required for sglang blackwell build
     BUILD_ARGS+=" --build-arg GRACE_BLACKWELL=true --build-arg BUILD_TYPE=blackwell_aarch64"
